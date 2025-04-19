@@ -2,11 +2,13 @@
 import streamlit as st
 import pandas as pd
 import re
+import time
 from datetime import datetime
 from verify_logic import verify_email
 
 st.set_page_config(page_title="EmailVerifierPro", layout="wide")
 
+# Gradient background and styles
 st.markdown("""
 <style>
 [data-testid="stAppViewContainer"] > .main {
@@ -37,10 +39,10 @@ h1, h2, h3 {
 """, unsafe_allow_html=True)
 
 st.title("📩 EmailVerifierPro")
-st.markdown("Upload, detect, confirm — and verify email lists with smart filters.")
+st.markdown("Upload, confirm, and enjoy a cinematic verification experience.")
 
-st.header("📤 Step 1: Upload Email List")
-upload_method = st.radio("Upload method:", ["Upload CSV or Excel", "Paste Emails"])
+st.header("📤 Upload Email File")
+upload_method = st.radio("Choose method:", ["CSV", "Excel", "Paste Emails"])
 
 if "uploaded_df" not in st.session_state:
     st.session_state.uploaded_df = None
@@ -49,10 +51,14 @@ if "uploaded_df" not in st.session_state:
     st.session_state.download_history = []
     st.session_state.column_confirmed = False
 
-if upload_method == "Upload CSV or Excel":
-    file = st.file_uploader("Upload your file", type=["csv", "xlsx"])
-    if file:
-        df = pd.read_csv(file) if file.name.endswith(".csv") else pd.read_excel(file)
+if upload_method in ["CSV", "Excel"]:
+    files = st.file_uploader("Upload your file(s)", type=["csv", "xlsx"], accept_multiple_files=True)
+    if files:
+        combined = []
+        for file in files:
+            df = pd.read_csv(file) if file.name.endswith(".csv") else pd.read_excel(file)
+            combined.append(df)
+        df = pd.concat(combined, ignore_index=True)
         st.session_state.uploaded_df = df
 
         email_col = None
@@ -68,13 +74,13 @@ if upload_method == "Upload CSV or Excel":
         def highlight(x): return ['background-color: lightgreen' if x.name == st.session_state.email_column else '' for _ in x]
         st.dataframe(df.head(10).style.apply(highlight, axis=0))
 
-        st.markdown("🚦 **We auto-selected the column below, but feel free to choose another before continuing.**")
-        selected = st.selectbox("Select email column to use:", options=df.columns, index=df.columns.get_loc(st.session_state.email_column))
+        st.markdown("🚦 Auto-selected column shown in green. You can change it below.")
+        selected = st.selectbox("Select email column:", options=df.columns, index=df.columns.get_loc(st.session_state.email_column))
         st.session_state.email_column = selected
 
-        if st.button("✅ Confirm Column Selection"):
+        if st.button("✅ Confirm Column"):
             st.session_state.column_confirmed = True
-            st.success(f"Column '{selected}' confirmed for verification ✅")
+            st.success(f"Using column: {selected}")
 
 elif upload_method == "Paste Emails":
     pasted = st.text_area("Paste emails (one per line):")
@@ -84,19 +90,31 @@ elif upload_method == "Paste Emails":
         st.session_state.uploaded_df = df
         st.session_state.email_column = "email"
         st.session_state.column_confirmed = True
-        st.success(f"✅ {len(df)} emails loaded from paste")
+        st.success(f"✅ {len(df)} emails loaded.")
 
+# Start verification
 if st.session_state.uploaded_df is not None and st.session_state.email_column and st.session_state.column_confirmed:
     if st.button("🚀 Start Verification"):
         results = []
-        for email in st.session_state.uploaded_df[st.session_state.email_column].dropna():
-            results.append(verify_email(email))
-        df_verified = pd.DataFrame(results)
-        st.session_state.verified_df = df_verified
-        st.success("🎉 Verification completed!")
+        emails = st.session_state.uploaded_df[st.session_state.email_column].dropna().tolist()
+        progress_bar = st.progress(0)
+        status = st.empty()
+        current = st.empty()
 
+        for i, email in enumerate(emails):
+            current.markdown(f"🔄 Verifying: **{email}**")
+            result = verify_email(email)
+            results.append(result)
+            progress_bar.progress((i + 1) / len(emails))
+            time.sleep(0.1)  # simulate smooth process
+
+        st.session_state.verified_df = pd.DataFrame(results)
+        current.markdown("✅ All emails verified!")
+        status.success("🎉 Done verifying!")
+
+# Show results
 if st.session_state.verified_df is not None:
-    st.header("📊 Step 2: View & Download")
+    st.header("📊 Results & Downloads")
     now_str = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     with st.expander("📄 Full Verified Data"):
@@ -112,7 +130,7 @@ if st.session_state.verified_df is not None:
 
     risky_df = st.session_state.verified_df[st.session_state.verified_df["status"] == "risky"]
     if not risky_df.empty:
-        st.subheader("⚠️ Risky Email Filters")
+        st.subheader("⚠️ Risky Email Filter")
         st.markdown("""
 | Score | Meaning |
 |-------|-----------------------------|
@@ -123,7 +141,7 @@ if st.session_state.verified_df is not None:
 | 9–10  | ⛔ Invalid / Very Risky     |
 """)
 
-        selected = st.multiselect("Select scores to download", list(range(1, 11)), default=[4, 5, 6])
+        selected = st.multiselect("Select risk scores", list(range(1, 11)), default=[4, 5, 6])
         filtered = risky_df[risky_df["risk_score"].isin(selected)]
         if not filtered.empty:
             file = f"risky_score_{'_'.join(map(str, selected))}_{now_str}.csv"
