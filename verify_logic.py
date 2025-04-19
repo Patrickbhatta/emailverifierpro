@@ -55,31 +55,16 @@ def verify_email(email):
     disposable = is_disposable(domain)
     blacklisted = is_blacklisted(domain)
     role_based = is_role_based(email)
-
     risk_score = 1
-    if not syntax:
-        risk_score = 10
-    elif not mx:
-        risk_score = 8
-    elif not smtp:
-        risk_score = 7
-    elif disposable:
-        risk_score = 6
-    elif blacklisted:
-        risk_score = 9
-    elif role_based:
-        risk_score = 4
-
+    if not syntax: risk_score = 10
+    elif not mx: risk_score = 8
+    elif not smtp: risk_score = 7
+    elif disposable: risk_score = 6
+    elif blacklisted: risk_score = 9
+    elif role_based: risk_score = 4
     status = "valid" if risk_score <= 3 else "risky" if risk_score <= 7 else "invalid"
-
     return {
-        "email": email,
-        "status": status,
-        "risk_score": risk_score,
-        "syntax": syntax,
-        "mx": mx,
-        "smtp": smtp,
-        "disposable": disposable,
-        "blacklisted": blacklisted,
-        "role_based": role_based
+        "email": email, "status": status, "risk_score": risk_score,
+        "syntax": syntax, "mx": mx, "smtp": smtp,
+        "disposable": disposable, "blacklisted": blacklisted, "role_based": role_based
     }
