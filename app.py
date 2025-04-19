@@ -6,6 +6,7 @@ from verify_logic import verify_email
 
 st.set_page_config(page_title="EmailVerifierPro", layout="wide")
 
+# Apply gradient background + icon styling
 st.markdown("""
 <style>
 body {
@@ -19,7 +20,7 @@ section.main > div {
     backdrop-filter: blur(10px);
     box-shadow: 0 4px 30px rgba(0,0,0,0.1);
 }
-h1, h2, h3 {
+h1, h2, h3, .stMarkdown {
   color: white;
 }
 .stButton > button {
@@ -36,29 +37,28 @@ h1, h2, h3 {
 </style>
 """, unsafe_allow_html=True)
 
-st.title("✨ EmailVerifierPro")
-st.markdown("Smart email verification with clear column detection and smooth filtering.")
+st.title("📩 EmailVerifierPro")
+st.markdown("Turn raw email lists into 💡 insights with clean verification and real-time risk scoring.")
 
-st.header("📤 Step 1: Upload Your Emails")
-upload_method = st.radio("Choose input method", ["Upload CSV or Excel", "Paste Manually"])
+st.header("📤 Step 1: Upload Email List")
+upload_method = st.radio("Upload type", ["Upload CSV or Excel", "Paste Emails"])
 
 if "uploaded_df" not in st.session_state:
     st.session_state.uploaded_df = None
     st.session_state.email_column = None
 
 if upload_method == "Upload CSV or Excel":
-    file = st.file_uploader("Upload .csv or .xlsx file", type=["csv", "xlsx"])
+    file = st.file_uploader("Upload your file", type=["csv", "xlsx"])
     if file:
         try:
             df = pd.read_csv(file) if file.name.endswith(".csv") else pd.read_excel(file)
             st.session_state.uploaded_df = df
 
-            # Detect email-like column
             email_col = None
             for col in df.columns:
                 sample = df[col].astype(str).dropna().head(50).tolist()
-                email_hits = sum([1 for val in sample if re.match(r"[^@\s]+@[^@\s]+\.[^@\s]+", val)])
-                if email_hits >= len(sample) * 0.5:
+                hits = sum([1 for v in sample if re.match(r"[^@\s]+@[^@\s]+\.[^@\s]+", v)])
+                if hits >= len(sample) * 0.5:
                     email_col = col
                     break
 
@@ -66,34 +66,30 @@ if upload_method == "Upload CSV or Excel":
                 st.session_state.email_column = email_col
                 st.success(f"✅ Detected email column: '{email_col}'")
             else:
-                st.warning("⚠️ Couldn't detect email column automatically. Please select manually.")
+                st.warning("⚠️ No email column detected, please select manually.")
                 st.session_state.email_column = df.columns[0]
 
-            # Show preview
-            st.markdown("### 👀 Data Preview (highlighted column will be verified)")
-            def highlight_col(x):
-                return ['background-color: lightgreen' if x.name == st.session_state.email_column else '' for _ in x]
+            st.markdown("### 👁️ Preview Data (highlighted = selected email column)")
+            def highlight(x): return ['background-color: lightgreen' if x.name == st.session_state.email_column else '' for _ in x]
+            st.dataframe(df.head(10).style.apply(highlight, axis=0))
 
-            st.dataframe(df.head(10).style.apply(highlight_col, axis=0))
-
-            selected = st.selectbox("📝 Confirm or select email column:", options=df.columns, index=df.columns.get_loc(st.session_state.email_column))
+            selected = st.selectbox("🎯 Confirm or select email column:", options=df.columns, index=df.columns.get_loc(st.session_state.email_column))
             st.session_state.email_column = selected
 
         except Exception as e:
-            st.error(f"❌ Error: {e}")
-
+            st.error(f"❌ Upload error: {e}")
 else:
-    pasted = st.text_area("Paste emails below (one per line):")
+    pasted = st.text_area("Paste emails (one per line):")
     if pasted:
-        emails = [line.strip() for line in pasted.split("\n") if line.strip()]
-        df = pd.DataFrame(emails, columns=["email"])
+        rows = [line.strip() for line in pasted.split("\n") if line.strip()]
+        df = pd.DataFrame(rows, columns=["email"])
         st.session_state.uploaded_df = df
         st.session_state.email_column = "email"
-        st.success(f"✅ Pasted {len(df)} unique emails.")
+        st.success(f"✅ Pasted {len(df)} emails.")
 
 if st.session_state.uploaded_df is not None and st.session_state.email_column:
     st.header("🔍 Step 2: Verify Emails")
-    st.info("Processing...")
+    st.info("This may take a few seconds...")
 
     results = []
     for email in st.session_state.uploaded_df[st.session_state.email_column].dropna():
@@ -101,11 +97,24 @@ if st.session_state.uploaded_df is not None and st.session_state.email_column:
     df_verified = pd.DataFrame(results)
     st.success("🎉 Verification complete!")
 
-    with st.expander("📄 View Results"):
+    with st.expander("📄 View Full Verification Results"):
         st.dataframe(df_verified)
 
-    st.markdown("### 🎯 Risk Score Guide (1–10)")
-    st.markdown("""
+    st.header("🎯 Step 3: Filter & Download")
+
+    st.download_button("⬇️ Download All Results", df_verified.to_csv(index=False), file_name="all_results.csv")
+
+    valid_df = df_verified[df_verified["status"] == "valid"]
+    if not valid_df.empty:
+        st.download_button("✅ Download Valid Only", valid_df.to_csv(index=False), file_name="valid_emails.csv")
+
+    risky_df = df_verified[df_verified["status"] == "risky"]
+    if not risky_df.empty:
+        st.subheader("⚠️ Risky Emails Filter")
+
+        # Move risk score legend inside here
+        st.markdown("#### 🧠 Risk Score Meaning")
+        st.markdown("""
 | Score | Meaning |
 |-------|-----------------------------|
 | 1     | ✅ Very Safe                |
@@ -115,20 +124,11 @@ if st.session_state.uploaded_df is not None and st.session_state.email_column:
 | 9–10  | ⛔ Invalid / Very Risky     |
 """)
 
-    st.header("🎯 Step 3: Filter & Download")
-    st.download_button("⬇️ Download All Results", df_verified.to_csv(index=False), file_name="all_results.csv")
-
-    valid_df = df_verified[df_verified["status"] == "valid"]
-    if not valid_df.empty:
-        st.download_button("⬇️ Download Valid Only", valid_df.to_csv(index=False), file_name="valid_emails.csv")
-
-    risky_df = df_verified[df_verified["status"] == "risky"]
-    if not risky_df.empty:
-        selected = st.multiselect("Select Risk Scores", options=list(range(1, 11)), default=[4,5,6])
+        selected = st.multiselect("Select risk scores to download", options=list(range(1, 11)), default=[4,5,6])
         filtered = risky_df[risky_df["risk_score"].isin(selected)]
         if not filtered.empty:
-            st.download_button(f"⬇️ Download Risky (Score {selected})", filtered.to_csv(index=False), file_name="risky_filtered.csv")
+            st.download_button(f"⬇️ Download Risky (Score: {selected})", filtered.to_csv(index=False), file_name="risky_filtered.csv")
         else:
-            st.info("No risky emails found with selected scores.")
+            st.info("No risky emails with selected scores.")
 else:
-    st.info("⬆️ Upload or paste emails to get started.")
+    st.info("⬆️ Upload or paste to begin.")
