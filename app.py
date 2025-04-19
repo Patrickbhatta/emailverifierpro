@@ -1,79 +1,86 @@
+
 import streamlit as st
 import pandas as pd
 import datetime
 import random
+from verify_logic import verify_email
 
-# Setup
 st.set_page_config(page_title="EmailVerifierPro", layout="wide")
-st.title("🚀 EmailVerifierPro")
-st.caption("Verify and clean your email lists in one place.")
+st.title("📬 EmailVerifierPro")
+st.markdown("Verify, filter, and download email lists with smart risk scoring (1 = safest, 10 = riskiest)")
 
-# Session State
+# Session setup
 if "uploaded_df" not in st.session_state:
     st.session_state.uploaded_df = None
 
-# Upload Section
-st.subheader("📤 Upload Your Emails")
-upload_method = st.radio("Choose upload method:", ["CSV", "Excel", "Paste Emails"])
+# Upload UI
+st.subheader("📤 Upload Email List")
+upload_method = st.radio("Select method", ["CSV", "Excel", "Paste Emails"])
 
 if upload_method in ["CSV", "Excel"]:
-    uploaded_file = st.file_uploader("Upload your file", type=["csv", "xlsx"])
+    uploaded_file = st.file_uploader("Upload CSV or Excel", type=["csv", "xlsx"])
     if uploaded_file:
         try:
-            if uploaded_file.name.endswith(".csv"):
-                df = pd.read_csv(uploaded_file)
-            else:
-                df = pd.read_excel(uploaded_file)
-
+            df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith(".csv") else pd.read_excel(uploaded_file)
             if "email" not in df.columns[0].lower():
-                st.error("First column must be labeled as 'email'")
+                st.error("❌ First column must contain emails")
             else:
                 df.columns = ["email"]
                 df.drop_duplicates(inplace=True)
                 st.session_state.uploaded_df = df
-                st.success(f"{len(df)} emails uploaded successfully!")
+                st.success(f"✅ {len(df)} emails uploaded")
         except Exception as e:
-            st.error(f"Error reading file: {e}")
+            st.error(f"Upload failed: {e}")
 else:
-    pasted = st.text_area("Paste emails (one per line):")
+    pasted = st.text_area("Paste emails here (one per line):")
     if pasted:
-        lines = pasted.strip().split("\n")
-        df = pd.DataFrame(lines, columns=["email"])
+        emails = pasted.strip().split("\n")
+        df = pd.DataFrame(emails, columns=["email"])
         df.drop_duplicates(inplace=True)
         st.session_state.uploaded_df = df
-        st.success(f"{len(df)} emails pasted successfully!")
+        st.success(f"✅ {len(df)} emails pasted")
 
-# Display + Mock Verification
+# Risk Score Legend
+st.subheader("🎯 Risk Score Meaning (1–10)")
+st.markdown("""
+| Score | Meaning |
+|-------|-----------------------------|
+| 1     | ✅ Very Safe                |
+| 2–3   | ✅ Low Risk                 |
+| 4–6   | ⚠️ Medium Risk              |
+| 7–8   | ❌ High Risk                |
+| 9–10  | ⛔ Invalid / Very Risky     |
+""")
+
+# If emails are uploaded
 if st.session_state.uploaded_df is not None:
-    st.divider()
-    st.subheader("📬 Uploaded Emails")
-    st.dataframe(st.session_state.uploaded_df)
+    st.subheader("🔍 Verifying Emails...")
 
-    st.subheader("🧠 Mock Email Verification Preview")
+    results = []
+    for email in st.session_state.uploaded_df["email"]:
+        results.append(verify_email(email))
+    results_df = pd.DataFrame(results)
 
-    df = st.session_state.uploaded_df.copy()
-    statuses = ["valid", "risky", "invalid"]
-    df["status"] = [statuses[i % 3] for i in range(len(df))]
-    df["risk_score"] = df["status"].apply(lambda x: 0 if x == "valid" else (random.randint(1, 49) if x == "risky" else 100))
+    st.success("✅ Verification complete")
+    st.dataframe(results_df)
 
-    st.dataframe(df)
+    # Download All
+    st.download_button("⬇️ Download All Results", results_df.to_csv(index=False), file_name="all_emails.csv")
 
-    st.divider()
-    st.subheader("⬇️ Download Options")
-
-    st.download_button("Download All Results", df.to_csv(index=False), file_name="all_results.csv")
-
-    valid_df = df[df["status"] == "valid"]
+    # Valid Only
+    valid_df = results_df[results_df["status"] == "valid"]
     if not valid_df.empty:
-        st.download_button("Download Only Valid Emails", valid_df.to_csv(index=False), file_name="valid_emails.csv")
+        st.download_button("⬇️ Download Valid Emails", valid_df.to_csv(index=False), file_name="valid_emails.csv")
 
-    risky_df = df[df["status"] == "risky"]
+    # Risky Filter
+    risky_df = results_df[results_df["status"] == "risky"]
     if not risky_df.empty:
-        selected_score = st.slider("Select max risk score to include in download", min_value=1, max_value=49, value=25)
-        filtered_risky = risky_df[risky_df["risk_score"] <= selected_score]
-        if not filtered_risky.empty:
-            st.download_button(f"Download Risky Emails (Score ≤ {selected_score})", filtered_risky.to_csv(index=False), file_name="risky_emails_filtered.csv")
+        st.subheader("🎯 Download Risky Emails by Score")
+        selected_scores = st.multiselect("Select risk scores (1–10)", options=list(range(1, 11)), default=[4, 5, 6])
+        filtered = risky_df[risky_df["risk_score"].isin(selected_scores)]
+        if not filtered.empty:
+            st.download_button(f"⬇️ Download Risky (Score: {selected_scores})", filtered.to_csv(index=False), file_name="filtered_risky_emails.csv")
         else:
-            st.info("No risky emails found below the selected score.")
+            st.info("No risky emails match selected scores.")
 else:
-    st.info("Upload or paste emails to get started.")
+    st.info("Upload or paste emails above to begin.")
