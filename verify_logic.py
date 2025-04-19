@@ -1,12 +1,11 @@
+
 import re
 import smtplib
 import socket
 import dns.resolver
 
-# Sample disposable + blacklist domain sets (can be replaced with larger external lists)
 DISPOSABLE_DOMAINS = {"mailinator.com", "tempmail.com", "10minutemail.com", "guerrillamail.com"}
 BLACKLISTED_DOMAINS = {"spamdomain.com", "fakemail.net"}
-
 ROLE_BASED_PREFIXES = {"admin", "info", "support", "contact", "sales", "billing", "webmaster"}
 
 def is_valid_syntax(email):
@@ -28,16 +27,14 @@ def smtp_check(email):
         domain = extract_domain(email)
         mx_records = dns.resolver.resolve(domain, "MX")
         mx_host = str(mx_records[0].exchange)
-
         server = smtplib.SMTP(timeout=10)
         server.connect(mx_host)
         server.helo("example.com")
         server.mail("me@example.com")
         code, _ = server.rcpt(email)
         server.quit()
-
         return code == 250
-    except (smtplib.SMTPServerDisconnected, smtplib.SMTPConnectError, socket.timeout, Exception):
+    except:
         return False
 
 def is_disposable(domain):
@@ -59,7 +56,6 @@ def verify_email(email):
     blacklisted = is_blacklisted(domain)
     role_based = is_role_based(email)
 
-    # Risk scoring logic from 1 (safest) to 10 (riskiest)
     risk_score = 1
     if not syntax:
         risk_score = 10
